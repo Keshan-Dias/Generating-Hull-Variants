@@ -829,6 +829,17 @@ with tab_export:
  
         if st.button("Export Design-Speed Dataset (MATLAB)"):
 
+            L0 = st.session_state["L"]
+            B0 = st.session_state["B"]
+            T0 = st.session_state["T"]
+            CB0 = st.session_state["CB"]
+            
+            # Default bounds (±10%) and step sizes for MATLAB dataset generation
+            L_min, L_max, L_step = L0 * 0.9, L0 * 1.1, 5.0
+            B_min, B_max, B_step = B0 * 0.9, B0 * 1.1, 1.0
+            T_min, T_max, T_step = T0 * 0.9, T0 * 1.1, 0.5
+            CB_min, CB_max, CB_step = CB0 * 0.9, CB0 * 1.1, 0.02
+
             L_vals = np.arange(L_min, L_max + L_step, L_step)
             B_vals = np.arange(B_min, B_max + B_step, B_step)
             T_vals = np.arange(T_min, T_max + T_step, T_step)
