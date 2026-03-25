@@ -1,6 +1,9 @@
 venv/
+.streamlit/
 __pycache__/
-*.mat
 *.docx
 *.xlsx
-report_plots/
+*.mat
+build/
+dist/
+*.spec

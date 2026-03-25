@@ -24,23 +24,28 @@ Create a new file in the root directory named `run_app.py`. This script will act
 ```python
 import os
 import sys
-import subprocess
+import multiprocessing
 
-def main():
-    # Get the directory where the executable is located
+if __name__ == '__main__':
+    multiprocessing.freeze_support()
+    
+    import streamlit.web.cli as stcli
+
     if getattr(sys, 'frozen', False):
         application_path = sys._MEIPASS
     else:
         application_path = os.path.dirname(os.path.abspath(__file__))
 
-    # The path to the streamlit script
     script_path = os.path.join(application_path, 'app.py')
 
-    # Run streamlit seamlessly
-    subprocess.Popen([sys.executable, "-m", "streamlit", "run", script_path, "--server.headless", "true", "--browser.gatherUsageStats", "false"])
+    sys.argv = [
+        "streamlit",
+        "run",
+        script_path,
+        "--global.developmentMode=false"
+    ]
     
-if __name__ == '__main__':
-    main()
+    sys.exit(stcli.main())
 ```
 *(Note: A slightly different launcher approach using `streamlit.web.cli` is also possible if the subprocess approach triggers antivirus warnings).*
 

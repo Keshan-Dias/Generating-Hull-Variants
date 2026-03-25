@@ -13,9 +13,32 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from openpyxl import Workbook
 from openpyxl.styles import Font
+import threading
+import time
 
 from holtrop_core import holtrop_resistance_power
 
+# ======================================================
+# AUTO-SHUTDOWN MONITOR (5 MINUTES INACTIVITY)
+# ======================================================
+@st.cache_resource
+def start_inactivity_monitor(timeout_seconds=300):
+    class InactivityMonitor:
+        def __init__(self):
+            self.last_active = time.time()
+            self.thread = threading.Thread(target=self._check_loop, daemon=True)
+            self.thread.start()
+
+        def _check_loop(self):
+            while True:
+                time.sleep(10)
+                if time.time() - self.last_active > timeout_seconds:
+                    os._exit(0)
+    return InactivityMonitor()
+
+# Initialize or retrieve the monitor, and update the timestamp on every interaction
+monitor = start_inactivity_monitor(300)
+monitor.last_active = time.time()
 
 # ======================================================
 # Helper function: add borders to Word tables
