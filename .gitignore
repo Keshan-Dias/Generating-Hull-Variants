@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.mat
+*.docx
+*.xlsx
+report_plots/
+build/
+dist/
+logs/
+exports/*
+!exports/.gitkeep

@@ -1,0 +1,40 @@
+You are asking great questions! Turning a Streamlit web app into a standalone desktop application (with a clickable executable and shortcut) is a very common requirement, but it requires a bit of a shift in how we package things.
+
+Streamlit is fundamentally a web server. To make it feel like "software" (a desktop app), we have to package the Python interpreter, all the dependencies, your code, and the Streamlit server into a single executable, and then tell that backend to automatically open the user's web browser to the correct local address when they double-click the `.exe`. 
+
+There are two main paths forward. We can **stick with Streamlit** (and use specialized framing tools to trick it into being a desktop app), or we can **rewrite the UI in a native desktop framework** (like PyQt, Tkinter, or CustomTkinter).
+
+To give you the best recommendation, I need to ask you a few questions about your goals for this software:
+
+### Questions to shape our approach:
+
+1. **Who is the end-user for this software?** 
+   - Will this be distributed to other engineers/students who might not have Python installed on their computers? Or is it mostly for your own use on this machine? If distributing, are they all on Windows, or do you need it to run on Mac/Linux too?
+
+2. **How much do you care about the "look and feel" of a native app?**
+   - Streamlit apps run in a web browser. We can package it so double-clicking the `.exe` opens a new tab in Chrome/Edge. Is opening a web browser acceptable, or do you strictly want a standalone window (like Excel or Word) that *doesn't* look like a website?
+
+3. **Is file size a concern?**
+   - Packaging a Python runtime + Pandas + Matplotlib + SciPy + Streamlit into a single `.exe` usually results in a file sizes between 300MB to 500MB. Is a file size that large acceptable for distribution?
+
+4. **How complex will this application get in the future?**
+   - Streamlit is amazing for quick data dashboards, but it reruns the *entire* script from top to bottom every time a user clicks a button or moves a slider. If you plan to add massive optimizations or state-heavy features later, Streamlit can become slow and difficult to manage compared to a true desktop framework. Do you anticipate this codebase growing significantly?
+
+5. **Are you open to learning/using a different UI framework if it makes the desktop experience better?**
+   - If a standalone desktop window is a hard requirement, I might suggest recreating the UI in **CustomTkinter** or **PyQt6/PySide6**. It would take a bit of work to rebuild the UI (the math logic in holtrop_core.py would stay exactly the same), but the final `.exe` would feel much more like professional desktop software. Are you open to a UI rewrite, or do you want to keep the Streamlit UI no matter what?
+
+### My Initial Recommendation (Pending Your Answers):
+
+If you want the absolute **fastest path** to a desktop shortcut without rewriting any code, we stick with Streamlit and use a library called **PyInstaller** combined with a tiny launch script. We can configure the script to start the Streamlit server silently in the background and pop open the default web browser.
+
+However, if you want a **professional, polished desktop software experience** (a dedicated window, no browser tabs, smaller file size, better performance), I strongly recommend rewriting the UI using **CustomTkinter** (which looks modern and beautiful) or **PyQt6**. 
+
+Let me know your thoughts on those questions, and we'll pick the exact right path to build your `.exe`!
+
+
+Your Answers:
+1. 
+2.
+3.
+4.
+5.
