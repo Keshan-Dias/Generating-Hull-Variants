@@ -4,6 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 import os
+import sys
+import tempfile
 
 from docx import Document
 from docx.shared import Inches
@@ -40,6 +42,40 @@ def prevent_cell_wrap(cell):
     tcPr = tc.get_or_add_tcPr()
     noWrap = OxmlElement("w:noWrap")
     tcPr.append(noWrap)
+
+
+def get_app_root():
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def get_exports_dir():
+    exports_dir = os.path.join(get_app_root(), "exports")
+    os.makedirs(exports_dir, exist_ok=True)
+    return exports_dir
+
+
+def get_export_path(file_name):
+    return os.path.join(get_exports_dir(), file_name)
+
+
+def get_speed_validation_error(v_min, v_max, v_design):
+    v_min = int(v_min)
+    v_max = int(v_max)
+    v_design = int(v_design)
+
+    if v_min > v_max:
+        return "Minimum speed must be less than or equal to maximum speed."
+
+    if not (v_min <= v_design <= v_max):
+        return "Design speed must lie between the selected minimum and maximum speeds."
+
+    return None
+
+
+EXPORTS_DIR = get_exports_dir()
 
 # ======================================================
 # PAGE CONFIG
@@ -176,18 +212,23 @@ with tab_inputs:
     # SAVE INPUTS
     # ==================================================
     if st.button("Save Inputs"):
-        st.session_state["L"] = L
-        st.session_state["B"] = B
-        st.session_state["T"] = T
-        st.session_state["CB"] = CB
-        st.session_state["V_min"] = int(V_min)
-        st.session_state["V_max"] = int(V_max)
-        st.session_state["V_design"] = int(V_design)
+        speed_error = get_speed_validation_error(V_min, V_max, V_design)
 
-        st.success(
-            "Inputs saved. Values are within the applicable "
-            "Holtrop–Mennen range for general cargo ships."
-        )
+        if speed_error:
+            st.error(speed_error)
+        else:
+            st.session_state["L"] = L
+            st.session_state["B"] = B
+            st.session_state["T"] = T
+            st.session_state["CB"] = CB
+            st.session_state["V_min"] = int(V_min)
+            st.session_state["V_max"] = int(V_max)
+            st.session_state["V_design"] = int(V_design)
+
+            st.success(
+                "Inputs saved. Values are within the applicable "
+                "Holtrop–Mennen range for general cargo ships."
+            )
 
 # ======================================================
 # TAB 2 — RESISTANCE
@@ -198,6 +239,11 @@ with tab_resistance:
     if "L" not in st.session_state:
         st.warning("Please enter and save inputs in the Inputs tab first.")
     else:
+        speed_error = get_speed_validation_error(
+            st.session_state["V_min"],
+            st.session_state["V_max"],
+            st.session_state["V_design"],
+        )
         # ----------------------------------------------
         # Resistance component selection
         # ----------------------------------------------
@@ -329,6 +375,7 @@ with tab_resistance:
                 "DHP (kW)"
             ]
         )
+        st.session_state["df_resistance"] = df
         
         # ----------------------------------------------
         # Hull-form ratios (constant with speed)
@@ -370,23 +417,26 @@ with tab_resistance:
         st.markdown(f"### Design-Speed ({st.session_state['V_design']} kn) Resistance Breakdown"
         )
 
-        df_design = df[df["Speed (kn)"] == st.session_state["V_design"]]
+        if speed_error:
+            st.error(speed_error)
+        else:
+            df_design = df[df["Speed (kn)"] == st.session_state["V_design"]]
 
-        if not df_design.empty:
-            row = df_design.iloc[0]
+            if not df_design.empty:
+                row = df_design.iloc[0]
 
-            c1, c2, c3, c4, c5, c6 = st.columns(6)
+                c1, c2, c3, c4, c5, c6 = st.columns(6)
 
-            c1.metric("Rf (kN)", f"{row['Rf (kN)']:.2f}")
-            c2.metric("Rform (kN)", f"{row['Rform (kN)']:.2f}")
-            Rw_val = row["Rw (kN)"] if include_wave else 0.0
-            Rbulb_val = row["Rbulb (kN)"] if (include_wave and include_bulb) else 0.0
+                c1.metric("Rf (kN)", f"{row['Rf (kN)']:.2f}")
+                c2.metric("Rform (kN)", f"{row['Rform (kN)']:.2f}")
+                Rw_val = row["Rw (kN)"] if include_wave else 0.0
+                Rbulb_val = row["Rbulb (kN)"] if (include_wave and include_bulb) else 0.0
 
-            c3.metric("Rw (kN)", f"{Rw_val:.2f}")
-            c4.metric("Rbulb (kN)", f"{Rbulb_val:.2f}")
+                c3.metric("Rw (kN)", f"{Rw_val:.2f}")
+                c4.metric("Rbulb (kN)", f"{Rbulb_val:.2f}")
 
-            c5.metric("Rtotal (kN)", f"{row['Rtotal (kN)']:.2f}")
-            c6.metric("Ct", f"{row['Ct']:.5f}")
+                c5.metric("Rtotal (kN)", f"{row['Rtotal (kN)']:.2f}")
+                c6.metric("Ct", f"{row['Ct']:.5f}")
 
         # ----------------------------------------------
         # Plots
@@ -815,6 +865,11 @@ with tab_export:
     if "L" not in st.session_state:
         st.warning("Please run resistance and optimization first.")
     else:
+        speed_error = get_speed_validation_error(
+            st.session_state["V_min"],
+            st.session_state["V_max"],
+            st.session_state["V_design"],
+        )
         st.markdown(
             """
             **Available Downloads**
@@ -828,302 +883,319 @@ with tab_export:
         # ==================================================
  
         if st.button("Export Design-Speed Dataset (MATLAB)"):
+            if speed_error:
+                st.error(speed_error)
+            else:
 
-            L0 = st.session_state["L"]
-            B0 = st.session_state["B"]
-            T0 = st.session_state["T"]
-            CB0 = st.session_state["CB"]
+                L0 = st.session_state["L"]
+                B0 = st.session_state["B"]
+                T0 = st.session_state["T"]
+                CB0 = st.session_state["CB"]
+                V_design = st.session_state["V_design"]
             
-            # Default bounds (±10%) and step sizes for MATLAB dataset generation
-            L_min, L_max, L_step = L0 * 0.9, L0 * 1.1, 5.0
-            B_min, B_max, B_step = B0 * 0.9, B0 * 1.1, 1.0
-            T_min, T_max, T_step = T0 * 0.9, T0 * 1.1, 0.5
-            CB_min, CB_max, CB_step = CB0 * 0.9, CB0 * 1.1, 0.02
+                # Default bounds (±10%) and step sizes for MATLAB dataset generation
+                L_min, L_max, L_step = L0 * 0.9, L0 * 1.1, 5.0
+                B_min, B_max, B_step = B0 * 0.9, B0 * 1.1, 1.0
+                T_min, T_max, T_step = T0 * 0.9, T0 * 1.1, 0.5
+                CB_min, CB_max, CB_step = CB0 * 0.9, CB0 * 1.1, 0.02
 
-            L_vals = np.arange(L_min, L_max + L_step, L_step)
-            B_vals = np.arange(B_min, B_max + B_step, B_step)
-            T_vals = np.arange(T_min, T_max + T_step, T_step)
-            Cb_vals = np.arange(CB_min, CB_max + CB_step, CB_step)
+                L_vals = np.arange(L_min, L_max + L_step, L_step)
+                B_vals = np.arange(B_min, B_max + B_step, B_step)
+                T_vals = np.arange(T_min, T_max + T_step, T_step)
+                Cb_vals = np.arange(CB_min, CB_max + CB_step, CB_step)
 
-            L_list, B_list, T_list, Cb_list, RT_list = [], [], [], [], []
+                L_list, B_list, T_list, Cb_list, RT_list = [], [], [], [], []
 
-            for L in L_vals:
-                for B in B_vals:
-                    for T in T_vals:
-                        for Cb in Cb_vals:
+                for L in L_vals:
+                    for B in B_vals:
+                        for T in T_vals:
+                            for Cb in Cb_vals:
 
-                            # ------------------------------
-                            # FEASIBILITY CONSTRAINTS
-                            # ------------------------------
-                            if not (5.0 <= L / B <= 9.0):
-                                continue
-                            if not (2.0 <= B / T <= 4.0):
-                                continue
-                            if not (0.55 <= Cb <= 0.85):
-                                continue
+                                # ------------------------------
+                                # FEASIBILITY CONSTRAINTS
+                                # ------------------------------
+                                if not (5.0 <= L / B <= 9.0):
+                                    continue
+                                if not (2.0 <= B / T <= 4.0):
+                                    continue
+                                if not (0.55 <= Cb <= 0.85):
+                                    continue
 
-                            # ------------------------------
-                            # HOLTROP AT DESIGN SPEED ONLY
-                            # ------------------------------
-                            RT, *_ = holtrop_resistance_power(
-                                L, B, T, Cb, V_design
-                            )
+                                # ------------------------------
+                                # HOLTROP AT DESIGN SPEED ONLY
+                                # ------------------------------
+                                RT, *_ = holtrop_resistance_power(
+                                    L, B, T, Cb, V_design
+                                )
 
-                            L_list.append(L)
-                            B_list.append(B)
-                            T_list.append(T)
-                            Cb_list.append(Cb)
-                            RT_list.append(RT)
+                                L_list.append(L)
+                                B_list.append(B)
+                                T_list.append(T)
+                                Cb_list.append(Cb)
+                                RT_list.append(RT)
 
-            # ==========================================
-            # EXPORT MATLAB FILE
-            # ==========================================
-            savemat(
-                "holtrop_designspeed_dataset.mat",
-                {
-                    "L": np.array(L_list),
-                    "B": np.array(B_list),
-                    "T": np.array(T_list),
-                    "Cb": np.array(Cb_list),
-                    "RT_kN": np.array(RT_list),
-                }
-            )
+                # ==========================================
+                # EXPORT MATLAB FILE
+                # ==========================================
+                matlab_path = get_export_path("holtrop_designspeed_dataset.mat")
+                savemat(
+                    matlab_path,
+                    {
+                        "L": np.array(L_list),
+                        "B": np.array(B_list),
+                        "T": np.array(T_list),
+                        "Cb": np.array(Cb_list),
+                        "RT_kN": np.array(RT_list),
+                    }
+                )
 
-            st.success(
-                f"Design-speed dataset exported "
-                f"({len(RT_list)} hull variants) → holtrop_designspeed_dataset.mat"
-            )
+                st.success(
+                    f"Design-speed dataset exported "
+                    f"({len(RT_list)} hull variants) → exports/holtrop_designspeed_dataset.mat"
+                )
 
 
         # ==================================================
         # WORD REPORT EXPORT
         # ==================================================
         if st.button("Download Resistance Report"):
+            if speed_error:
+                st.error(speed_error)
+            else:
 
-            doc = Document()
-            doc.add_heading(
-                "Holtrop–Mennen Resistance Analysis Report",
-                level=1
-            )
+                doc = Document()
+                df_report = st.session_state.get("df_resistance", df)
+                doc.add_heading(
+                    "Holtrop–Mennen Resistance Analysis Report",
+                    level=1
+                )
+	
+                # --------------------------------------------------
+                # 1. Ship particulars
+                # --------------------------------------------------
+                doc.add_heading("1. Ship Particulars", level=2)
+                p = doc.add_paragraph()
+                p.add_run(f"Length (L): {st.session_state['L']} m\n")
+                p.add_run(f"Breadth (B): {st.session_state['B']} m\n")
+                p.add_run(f"Draft (T): {st.session_state['T']} m\n")
+                p.add_run(f"Block Coefficient (Cb): {st.session_state['CB']}\n")
+                p.add_run(f"Design Speed: {st.session_state['V_design']} kn\n")
 
-            # --------------------------------------------------
-            # 1. Ship particulars
-            # --------------------------------------------------
-            doc.add_heading("1. Ship Particulars", level=2)
-            p = doc.add_paragraph()
-            p.add_run(f"Length (L): {st.session_state['L']} m\n")
-            p.add_run(f"Breadth (B): {st.session_state['B']} m\n")
-            p.add_run(f"Draft (T): {st.session_state['T']} m\n")
-            p.add_run(f"Block Coefficient (Cb): {st.session_state['CB']}\n")
-            p.add_run(f"Design Speed: {st.session_state['V_design']} kn\n")
+                # --------------------------------------------------
+                # 2. Resistance results table
+                # --------------------------------------------------
+                doc.add_heading("2. Resistance Results", level=2)
 
-            # --------------------------------------------------
-            # 2. Resistance results table
-            # --------------------------------------------------
-            doc.add_heading("2. Resistance Results", level=2)
+                headers = [
+                    "Speed [kn]",
+                    "Rf [kN]",
+                    "Rform [kN]",
+                    "Rw [kN]",
+                    "Rbulb [kN]",
+                    "RT [kN]",
+                    "EHP [kW]",
+                    "DHP [kW]",
+                ]
 
-            headers = [
-                "Speed [kn]",
-                "Rf [kN]",
-                "Rform [kN]",
-                "Rw [kN]",
-                "Rbulb [kN]",
-                "RT [kN]",
-                "EHP [kW]",
-                "DHP [kW]",
-            ]
+                table = doc.add_table(rows=1, cols=len(headers))
+                set_table_borders(table)
 
-            table = doc.add_table(rows=1, cols=len(headers))
-            set_table_borders(table)
-
-            hdr_cells = table.rows[0].cells
-            for i, header in enumerate(headers):
-                hdr_cells[i].text = header
-                hdr_cells[i].paragraphs[0].runs[0].bold = True
-                prevent_cell_wrap(hdr_cells[i])
-
-            for _, row in df.iterrows():
-                row_cells = table.add_row().cells
-                row_cells[0].text = f"{row['Speed (kn)']:.1f}"
-                row_cells[1].text = f"{row['Rf (kN)']:.3f}"
-                row_cells[2].text = f"{row['Rform (kN)']:.3f}"
-                row_cells[3].text = f"{row['Rw (kN)']:.3f}"
-                row_cells[4].text = f"{row['Rbulb (kN)']:.3f}"
-                row_cells[5].text = f"{row['Rtotal (kN)']:.3f}"
-                row_cells[6].text = f"{row['EHP (kW)']:.3f}"
-                row_cells[7].text = f"{row['DHP (kW)']:.3f}"
-
-            # --------------------------------------------------
-            # 3. Resistance and Power Plots
-            # --------------------------------------------------
-            doc.add_heading("3. Resistance and Power Plots", level=2)
-
-            plot_dir = "report_plots"
-            os.makedirs(plot_dir, exist_ok=True)
-
-            def save_plot(x, y, title, ylabel, fname):
-                fig, ax = plt.subplots()
-                ax.plot(x, y, linewidth=2)
-                ax.set_xlabel("Speed (kn)")
-                ax.set_ylabel(ylabel)
-                ax.set_title(title)
-                ax.grid(True)
-                path = os.path.join(plot_dir, fname)
-                fig.savefig(path, dpi=300, bbox_inches="tight")
-                plt.close(fig)
-                doc.add_paragraph(title)
-                doc.add_picture(path, width=Inches(5))
-
-            save_plot(df["Speed (kn)"], df["Rtotal (kN)"],
-                      "Total Resistance vs Speed", "Resistance (kN)", "rt.png")
-
-            save_plot(df["Speed (kn)"], df["EHP (kW)"],
-                      "Effective Power vs Speed", "Power (kW)", "ehp.png")
-
-            save_plot(df["Speed (kn)"], df["DHP (kW)"],
-                      "Delivered Power vs Speed", "Power (kW)", "dhp.png")
-
-            save_plot(df["Speed (kn)"], df["Rf (kN)"],
-                      "Frictional Resistance vs Speed", "Rf (kN)", "rf.png")
-
-            save_plot(df["Speed (kn)"], df["Rform (kN)"],
-                      "Form Resistance vs Speed", "Rform (kN)", "rform.png")
-
-            save_plot(df["Speed (kn)"], df["Rw (kN)"],
-                      "Wave Resistance vs Speed", "Rw (kN)", "rw.png")
-
-            save_plot(df["Speed (kn)"], df["Rbulb (kN)"],
-                      "Bulbous Bow Resistance vs Speed", "Rbulb (kN)", "rbulb.png")
-
-            # --------------------------------------------------
-            # 4. Optimization results
-            # --------------------------------------------------
-            if "df_opt" in st.session_state:
-                df_opt = st.session_state["df_opt"]
-
-                doc.add_heading("4. Optimization Results", level=2)
-
-                table2 = doc.add_table(rows=1, cols=len(df_opt.columns))
-                set_table_borders(table2)
-
-                hdr_cells = table2.rows[0].cells
-                for i, col in enumerate(df_opt.columns):
-                    hdr_cells[i].text = col
+                hdr_cells = table.rows[0].cells
+                for i, header in enumerate(headers):
+                    hdr_cells[i].text = header
                     hdr_cells[i].paragraphs[0].runs[0].bold = True
                     prevent_cell_wrap(hdr_cells[i])
 
-                for _, row in df_opt.iterrows():
-                    row_cells = table2.add_row().cells
-                    for i, val in enumerate(row):
-                        row_cells[i].text = (
-                            f"{val:.3f}" if isinstance(val, float) else str(val)
-                        )
+                for _, row in df_report.iterrows():
+                    row_cells = table.add_row().cells
+                    row_cells[0].text = f"{row['Speed (kn)']:.1f}"
+                    row_cells[1].text = f"{row['Rf (kN)']:.3f}"
+                    row_cells[2].text = f"{row['Rform (kN)']:.3f}"
+                    row_cells[3].text = f"{row['Rw (kN)']:.3f}"
+                    row_cells[4].text = f"{row['Rbulb (kN)']:.3f}"
+                    row_cells[5].text = f"{row['Rtotal (kN)']:.3f}"
+                    row_cells[6].text = f"{row['EHP (kW)']:.3f}"
+                    row_cells[7].text = f"{row['DHP (kW)']:.3f}"
 
-            # --------------------------------------------------
-            # Save report
-            # --------------------------------------------------
-            doc.save("Holtrop_Resistance_Report.docx")
-            st.success("Report Downloaded: Holtrop_Resistance_Report.docx")
+                # --------------------------------------------------
+                # 3. Resistance and Power Plots
+                # --------------------------------------------------
+                doc.add_heading("3. Resistance and Power Plots", level=2)
+
+                report_path = get_export_path("Holtrop_Resistance_Report.docx")
+
+                with tempfile.TemporaryDirectory(
+                    dir=EXPORTS_DIR,
+                    prefix="report_plots_"
+                ) as plot_dir:
+
+                    def save_plot(x, y, title, ylabel, fname):
+                        fig, ax = plt.subplots()
+                        ax.plot(x, y, linewidth=2)
+                        ax.set_xlabel("Speed (kn)")
+                        ax.set_ylabel(ylabel)
+                        ax.set_title(title)
+                        ax.grid(True)
+                        path = os.path.join(plot_dir, fname)
+                        fig.savefig(path, dpi=300, bbox_inches="tight")
+                        plt.close(fig)
+                        doc.add_paragraph(title)
+                        doc.add_picture(path, width=Inches(5))
+
+                    save_plot(df_report["Speed (kn)"], df_report["Rtotal (kN)"],
+                              "Total Resistance vs Speed", "Resistance (kN)", "rt.png")
+
+                    save_plot(df_report["Speed (kn)"], df_report["EHP (kW)"],
+                              "Effective Power vs Speed", "Power (kW)", "ehp.png")
+
+                    save_plot(df_report["Speed (kn)"], df_report["DHP (kW)"],
+                              "Delivered Power vs Speed", "Power (kW)", "dhp.png")
+
+                    save_plot(df_report["Speed (kn)"], df_report["Rf (kN)"],
+                              "Frictional Resistance vs Speed", "Rf (kN)", "rf.png")
+
+                    save_plot(df_report["Speed (kn)"], df_report["Rform (kN)"],
+                              "Form Resistance vs Speed", "Rform (kN)", "rform.png")
+
+                    save_plot(df_report["Speed (kn)"], df_report["Rw (kN)"],
+                              "Wave Resistance vs Speed", "Rw (kN)", "rw.png")
+
+                    save_plot(df_report["Speed (kn)"], df_report["Rbulb (kN)"],
+                              "Bulbous Bow Resistance vs Speed", "Rbulb (kN)", "rbulb.png")
+
+                    # --------------------------------------------------
+                    # 4. Hull-form dataset
+                    # --------------------------------------------------
+                    if "df_generated" in st.session_state:
+                        df_opt = st.session_state["df_generated"]
+
+                        doc.add_heading("4. Hull-Form Dataset", level=2)
+
+                        table2 = doc.add_table(rows=1, cols=len(df_opt.columns))
+                        set_table_borders(table2)
+
+                        hdr_cells = table2.rows[0].cells
+                        for i, col in enumerate(df_opt.columns):
+                            hdr_cells[i].text = col
+                            hdr_cells[i].paragraphs[0].runs[0].bold = True
+                            prevent_cell_wrap(hdr_cells[i])
+
+                        for _, row in df_opt.iterrows():
+                            row_cells = table2.add_row().cells
+                            for i, val in enumerate(row):
+                                row_cells[i].text = (
+                                    f"{val:.3f}" if isinstance(val, float) else str(val)
+                                )
+
+                    # --------------------------------------------------
+                    # Save report
+                    # --------------------------------------------------
+                    doc.save(report_path)
+
+                st.success("Report Downloaded: exports/Holtrop_Resistance_Report.docx")
 
 
         # ==================================================
         # EXCEL EXPORT
         # ==================================================
         if st.button("Download Excel Workbook (.xlsx)"):
+            if speed_error:
+                st.error(speed_error)
+            else:
 
-            wb = Workbook()
+                wb = Workbook()
+	
+                # ==============================
+                # 1️⃣ MAINS SHEET
+                # ==============================
+                ws_main = wb.active
+                ws_main.title = "Mains"
 
-            # ==============================
-            # 1️⃣ MAINS SHEET
-            # ==============================
-            ws_main = wb.active
-            ws_main.title = "Mains"
+                ws_main["A1"] = "BASELINE MODEL PARAMETERS"
+                ws_main["A1"].font = Font(bold=True)
 
-            ws_main["A1"] = "BASELINE MODEL PARAMETERS"
-            ws_main["A1"].font = Font(bold=True)
+                ws_main["A3"] = "Length (L)"
+                ws_main["B3"] = st.session_state["L"]
 
-            ws_main["A3"] = "Length (L)"
-            ws_main["B3"] = st.session_state["L"]
+                ws_main["A4"] = "Breadth (B)"
+                ws_main["B4"] = st.session_state["B"]
 
-            ws_main["A4"] = "Breadth (B)"
-            ws_main["B4"] = st.session_state["B"]
+                ws_main["A5"] = "Draft (T)"
+                ws_main["B5"] = st.session_state["T"]
 
-            ws_main["A5"] = "Draft (T)"
-            ws_main["B5"] = st.session_state["T"]
+                ws_main["A6"] = "Block Coefficient (Cb)"
+                ws_main["B6"] = st.session_state["CB"]
 
-            ws_main["A6"] = "Block Coefficient (Cb)"
-            ws_main["B6"] = st.session_state["CB"]
+                ws_main["A7"] = "Design Speed (kn)"
+                ws_main["B7"] = st.session_state["V_design"]
 
-            ws_main["A7"] = "Design Speed (kn)"
-            ws_main["B7"] = st.session_state["V_design"]
+                # ==============================
+                # 2️⃣ DIMENSIONAL SHEET
+                # ==============================
+                ws_dim = wb.create_sheet("Dimensional")
 
-            # ==============================
-            # 2️⃣ DIMENSIONAL SHEET
-            # ==============================
-            ws_dim = wb.create_sheet("Dimensional")
+                if "df_generated" in st.session_state:
+                    df_gen = st.session_state["df_generated"]
 
-            if "df_generated" in st.session_state:
-                df_gen = st.session_state["df_generated"]
+                    for col_idx, col_name in enumerate(df_gen.columns, 1):
+                        ws_dim.cell(row=1, column=col_idx).value = col_name
+                        ws_dim.cell(row=1, column=col_idx).font = Font(bold=True)
 
-                for col_idx, col_name in enumerate(df_gen.columns, 1):
-                    ws_dim.cell(row=1, column=col_idx).value = col_name
-                    ws_dim.cell(row=1, column=col_idx).font = Font(bold=True)
+                    for row_idx, row in enumerate(df_gen.values, 2):
+                        for col_idx, value in enumerate(row, 1):
+                            ws_dim.cell(row=row_idx, column=col_idx).value = float(value)
 
-                for row_idx, row in enumerate(df_gen.values, 2):
-                    for col_idx, value in enumerate(row, 1):
-                        ws_dim.cell(row=row_idx, column=col_idx).value = float(value)
+                # ==============================
+                # 3️⃣ HYDROSTATICS SHEET
+                # ==============================
+                ws_hydro = wb.create_sheet("Hydrostatics")
 
-            # ==============================
-            # 3️⃣ HYDROSTATICS SHEET
-            # ==============================
-            ws_hydro = wb.create_sheet("Hydrostatics")
+                ws_hydro["A1"] = "Hydrostatic Properties"
+                ws_hydro["A1"].font = Font(bold=True)
 
-            ws_hydro["A1"] = "Hydrostatic Properties"
-            ws_hydro["A1"].font = Font(bold=True)
+                L = st.session_state["L"]
+                B = st.session_state["B"]
+                T = st.session_state["T"]
+                CB = st.session_state["CB"]
 
-            L = st.session_state["L"]
-            B = st.session_state["B"]
-            T = st.session_state["T"]
-            CB = st.session_state["CB"]
+                disp_volume = L * B * T * CB
+                disp_mass = disp_volume * 1025 / 1000
 
-            disp_volume = L * B * T * CB
-            disp_mass = disp_volume * 1025 / 1000
+                ws_hydro["A3"] = "Displacement Volume (m³)"
+                ws_hydro["B3"] = disp_volume
 
-            ws_hydro["A3"] = "Displacement Volume (m³)"
-            ws_hydro["B3"] = disp_volume
+                ws_hydro["A4"] = "Displacement Mass (tonnes)"
+                ws_hydro["B4"] = disp_mass
 
-            ws_hydro["A4"] = "Displacement Mass (tonnes)"
-            ws_hydro["B4"] = disp_mass
+                ws_hydro["A6"] = "L/B"
+                ws_hydro["B6"] = L / B
 
-            ws_hydro["A6"] = "L/B"
-            ws_hydro["B6"] = L / B
+                ws_hydro["A7"] = "B/T"
+                ws_hydro["B7"] = B / T
 
-            ws_hydro["A7"] = "B/T"
-            ws_hydro["B7"] = B / T
+                ws_hydro["A8"] = "L/T"
+                ws_hydro["B8"] = L / T
 
-            ws_hydro["A8"] = "L/T"
-            ws_hydro["B8"] = L / T
+                # ==============================
+                # 4️⃣ RESISTANCE SHEET
+                # ==============================
+                ws_res = wb.create_sheet("Resistance")
 
-            # ==============================
-            # 4️⃣ RESISTANCE SHEET
-            # ==============================
-            ws_res = wb.create_sheet("Resistance")
+                if "df_resistance" in st.session_state:
+                    df_res = st.session_state["df_resistance"]
 
-            if "df_resistance" in st.session_state:
-                df_res = st.session_state["df_resistance"]
+                    for col_idx, col_name in enumerate(df_res.columns, 1):
+                        ws_res.cell(row=1, column=col_idx).value = col_name
+                        ws_res.cell(row=1, column=col_idx).font = Font(bold=True)
 
-                for col_idx, col_name in enumerate(df_res.columns, 1):
-                    ws_res.cell(row=1, column=col_idx).value = col_name
-                    ws_res.cell(row=1, column=col_idx).font = Font(bold=True)
+                    for row_idx, row in enumerate(df_res.values, 2):
+                        for col_idx, value in enumerate(row, 1):
+                            ws_res.cell(row=row_idx, column=col_idx).value = float(value)
 
-                for row_idx, row in enumerate(df_res.values, 2):
-                    for col_idx, value in enumerate(row, 1):
-                        ws_res.cell(row=row_idx, column=col_idx).value = float(value)
+                # ==============================
+                # SAVE FILE
+                # ==============================
+                file_name = get_export_path("Holtrop_Complete_Results.xlsx")
+                wb.save(file_name)
 
-            # ==============================
-            # SAVE FILE
-            # ==============================
-            file_name = "Holtrop_Complete_Results.xlsx"
-            wb.save(file_name)
-
-            st.success("Excel Workbook Downloaded: Holtrop_Complete_Results.xlsx")
+                st.success("Excel Workbook Downloaded: exports/Holtrop_Complete_Results.xlsx")

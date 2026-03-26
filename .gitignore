@@ -4,3 +4,8 @@ __pycache__/
 *.docx
 *.xlsx
 report_plots/
+build/
+dist/
+logs/
+exports/*
+!exports/.gitkeep
