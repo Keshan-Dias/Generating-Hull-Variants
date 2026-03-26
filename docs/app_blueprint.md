@@ -1,40 +1,26 @@
-# Generating Hull Variants - Desktop Application Blueprint
+# Native Wrapper App Blueprint
 
-## 1. Project Objectives
-Transform the existing Streamlit-based web application into a distributable, standalone software package for Windows. 
-- **Target Audience:** Naval architects and engineers with no coding background or Python installation.
-- **Platform:** Windows OS.
-- **Key Features:** Data inputs, parametric hull generation, resistance/hydrostatic calculations, visualization (Matplotlib graphs), and data export (MATLAB/Excel/Word).
+## Goal
+To package the existing Streamlit codebase into a fully standalone, native desktop application window without rewriting the frontend code.
 
-## 2. Architectural Decision
-Based on the software constraints (basic future complexity, graphical emphasis, no file size limit) and an openness to different frameworks:
+## Architecture: The "Native Wrapper"
+Instead of opening the application in a standard web browser (like Chrome or Edge), we use a **WebView container** (specifically `pywebview`).
+- **Backend:** Streamlit still runs securely in a hidden background Python thread.
+- **Frontend:** `pywebview` creates a real Windows application frame (with an icon, minimize/maximize buttons, and its own taskbar presence) and renders the local Streamlit server directly inside of it. 
+- **User Experience:** From the naval architect's perspective, they just double-click an executable, and a standalone application window opens up. They will never see a URL bar or a browser tab.
 
-**Decision:** We will retain the **Streamlit** frontend and package it using **PyInstaller** along with a silent launcher script.
+## Analysis of Tradeoffs
 
-**Why not a CustomTkinter / PyQt rewrite?**
-1. **Visual Excellence:** The current Streamlit UI already handles the complex Matplotlib graphs, data tables, and tabbed layout perfectly. Rebuilding this level of responsive data-visualization in Tkinter or PyQt is disproportionately time-consuming.
-2. **"Sufficient" Browser UI:** Since a browser-based local UI is acceptable to the end-users, there is no strict need to spend hours rewriting the UI when we can achieve the "double-click executable" experience instantly with Streamlit.
+### 1. File Size (The "Heavy" Factor)
+- **Estimated Size:** ~300MB to 500MB for the final `.exe` (or ZIP).
+- **Reason:** Because Streamlit is essentially a web server, the executable has to be completely self-contained. It must heavily bundle:
+  1. The entire Python 3.13 Runtime so the user doesn't have to install Python.
+  2. Heavy mathematical libraries (Pandas, Numpy, Scipy).
+  3. The Streamlit Tornado Web Server.
+  4. The web-rendering engine components required by `pywebview`.
+- **Verdict:** While 400MB sounds large for a simple calculator, it is completely standard for modern desktop apps (Electron apps like Discord, VSCode, and Slack are roughly the same size). File size does not affect runtime speed, it just means the `.zip` takes a minute longer to download or email.
 
-## 3. System Architecture
-The distributable `.exe` will contain three layers:
-
-1. **The Launcher (`run_app.py`):** 
-   A lightweight Python script compiled into a windowless executable (`.exe`). When the user double-clicks this, it silently triggers the Streamlit server.
-2. **The Streamlit Server (`app.py`):** 
-   The core application logic and UI. The launcher automatically opens the user's default web browser (Edge/Chrome) pointing to `localhost:8501`.
-3. **The Core Engine (`holtrop_core.py`):**
-   The mathematical logic handling the Holtrop-Mennen resistance calculations.
-
-## 4. Packaging Strategy
-We will use **PyInstaller** to bundle the Python interpreter, Streamlit, Pandas, Matplotlib, SciPy, and all application scripts into a single, redistributable directory or one-file executable.
-
-- **PyInstaller Hook:** Streamlit requires specific PyInstaller "hooks" to copy its internal static web assets over to the executable.
-- **Entry Point:** A custom `run_app.py` script will be the entry point.
-- **Distribution:** The app will be provided as a zip file containing the `.exe` and associated data files, meaning end-users simply "unzip and click".
-
-## 5. Development Phases
-1. **Create the Launcher Script** (`run_app.py`)
-2. **Test the Launcher** locally
-3. **Configure PyInstaller** (via a `.spec` file) to bundle Streamlit's web assets
-4. **Build the Executable** using PyInstaller
-5. **Quality Assurance:** Run the `.exe` outside the development environment to ensure it opens the browser, renders graphs, and exports `.mat` files successfully.
+### 2. Startup Execution Time
+- **Estimated Time:** 5 to 15 seconds from double-click to the fully rendered GUI.
+- **Reason:** When the `.exe` is double-clicked, Windows has to silently unpack the bundled Python environment into a temporary memory directory, internally boot up the local Streamlit server, wait exactly a second for the server port to bind, and finally launch the WebView container to point to that newly created server. 
+- **Verdict:** The app itself will run blazingly fast once opened, but the initial "boot time" takes several seconds of a blank screen or loading cursor.

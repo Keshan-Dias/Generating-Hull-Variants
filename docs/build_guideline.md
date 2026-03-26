@@ -1,70 +1,23 @@
-# Step-by-Step Guideline: Building the Desktop Executable
+# Build Guideline: Streamlit Native Wrapper
 
-Follow these steps to turn the Streamlit application into a distributable Windows `.exe`.
+This document outlines the exact technical pipeline for converting the Streamlit application into a true native desktop window using `pywebview`.
 
-## Phase 1: Preparation
-
-1. **Ensure Virtual Environment is Active**
-   Make sure you are working inside the `venv` where all dependencies (Streamlit, Pandas, SciPy, etc.) are installed.
-   ```powershell
-   .\venv\Scripts\Activate.ps1
-   ```
-
-2. **Install Packaging Tools**
-   Install PyInstaller, which is the tool that compiles python into `.exe` files.
-   ```powershell
-   pip install pyinstaller
-   ```
-
-## Phase 2: Create the Launcher Script
-
-Create a new file in the root directory named `run_app.py`. This script will act as the entry point for the compiled software. It will silently start the Streamlit server and automatically open the web browser.
-
-**Content for `run_app.py`:**
-```python
-import os
-import sys
-import subprocess
-
-def main():
-    # Get the directory where the executable is located
-    if getattr(sys, 'frozen', False):
-        application_path = sys._MEIPASS
-    else:
-        application_path = os.path.dirname(os.path.abspath(__file__))
-
-    # The path to the streamlit script
-    script_path = os.path.join(application_path, 'app.py')
-
-    # Run streamlit seamlessly
-    subprocess.Popen([sys.executable, "-m", "streamlit", "run", script_path, "--server.headless", "true", "--browser.gatherUsageStats", "false"])
-    
-if __name__ == '__main__':
-    main()
+## Phase 1: New Dependencies
+We need a library capable of generating native Windows application frames and rendering web content inside them without relying on traditional browsers.
+```powershell
+pip install pywebview
 ```
-*(Note: A slightly different launcher approach using `streamlit.web.cli` is also possible if the subprocess approach triggers antivirus warnings).*
 
-## Phase 3: Compile with PyInstaller
+## Phase 2: The Core Launcher (`run_native.py`)
+We must create a brand new multi-threaded launcher script that performs two critical tasks simultaneously:
+1. **Background Server:** Spawns a background daemon thread that natively initializes `streamlit.web.cli.main()`, effectively starting the hidden web server on port 8501.
+2. **Foreground UI:** Spawns the main thread that calls `webview.create_window` and `webview.start()`, pointing it exclusively to `http://localhost:8501`.
 
-We need to tell PyInstaller to include your Python scripts (`app.py`, `holtrop_core.py`) and Streamlit's hidden web files.
+*Note: With an enclosed webview, we no longer need the 5-minute inactivity auto-shutdown logic we built previously. Because the Streamlit window is intrinsically locked to the WebView, we can programmatically instruct `pywebview` to forcefully kill the Streamlit thread the exact millisecond the user clicks the red 'X' to close the application window.*
 
-1. **Run the initial PyInstaller command** to generate a `.spec` file:
-   ```powershell
-   pyinstaller --name "HullVariants" --windowed --add-data "app.py;." --add-data "holtrop_core.py;." --copy-metadata streamlit run_app.py
-   ```
-   * `--windowed`: Prevents the black console window from showing up.
-   * `--add-data`: Bundles your specific code files.
-   * `--copy-metadata`: Ensures Streamlit can find its own version info.
+## Phase 3: PyInstaller Compilation
+We will compile the script using PyInstaller, making sure to bundle the PyWebView dependencies alongside our existing strict imports array.
 
-2. **Wait for the build to finish.** PyInstaller will create a `build/` folder and a `dist/` folder.
-
-## Phase 4: Testing & Distribution
-
-1. **Locate the Executable**
-   Go into the `dist/HullVariants/` directory. You will find `HullVariants.exe`.
-2. **Test It**
-   Double-click `HullVariants.exe`. The black terminal window should NOT appear (or should flash briefly), and your default web browser should open automatically displaying the "General Cargo Vessel Resistance" tool.
-3. **Verify Functionality**
-   Test the graphs, dataset generation, and the MATLAB / Word exports to ensure file paths resolve correctly in the packaged mode.
-4. **Distribute**
-   Zip the entire `dist/HullVariants/` folder. Send this `.zip` file to your end-users. They just need to extract it and double-click the `.exe`!
+```powershell
+pyinstaller -y --name "HullVariantsNative" --windowed --add-data "app.py;." --collect-all streamlit --collect-data docx --hidden-import pandas --hidden-import numpy --hidden-import matplotlib --hidden-import scipy.io --hidden-import openpyxl --hidden-import holtrop_core run_native.py
+```
